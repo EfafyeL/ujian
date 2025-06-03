@@ -1,0 +1,5 @@
+
+{
+  "name": "Google Forms Online Exam Proctor",
+  "description": "A web application to conduct online exams using Google Forms with a timer and basic tab switch detection to discourage cheating. Designed for a focused exam experience."
+}
