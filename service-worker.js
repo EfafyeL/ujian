@@ -1,15 +1,17 @@
 const CACHE_NAME = 'online-exam-proctor-v1';
 // IMPORTANT: Update this list with all your critical local assets.
-// '/index.tsx' is included as per your current setup where it's directly sourced.
-// If you have a build step that outputs a different JS file (e.g., index.js, main.js),
-// you should cache that file instead of '/index.tsx'.
+// Using relative paths for GitHub Pages compatibility.
 const CACHE_ASSETS = [
-  '/',
-  '/index.html',
-  '/index.tsx', // Or the compiled main JS file
-  '/manifest.json',
-  '/icons/icon-192x192.png',
-  '/icons/icon-512x512.png'
+  './', // Represents the root of your project, often resolves to index.html
+  './index.html',
+  // Caching index.tsx directly is less common for production.
+  // Typically, you'd cache the compiled JS. Since we're using esm.sh,
+  // index.html is more critical, and esm.sh scripts will be cached by the fetch handler.
+  // We can keep index.tsx here if it helps, but ensure index.html is correctly served.
+  './index.tsx', 
+  './manifest.json',
+  './icons/icon-192x192.png',
+  './icons/icon-512x512.png'
   // Add paths to other critical local assets like global CSS files if any
 ];
 
@@ -19,6 +21,7 @@ self.addEventListener('install', event => {
     caches.open(CACHE_NAME)
       .then(cache => {
         console.log('Service Worker: Caching app shell');
+        // It's crucial that these paths are correct relative to the deployed service worker's location.
         return cache.addAll(CACHE_ASSETS);
       })
       .then(() => self.skipWaiting()) // Activate worker immediately
@@ -54,35 +57,39 @@ self.addEventListener('fetch', event => {
             const responseToCache = response.clone();
             caches.open(CACHE_NAME)
               .then(cache => {
-                cache.put(event.request, responseToCache);
+                cache.put(event.request, responseToCache); // Cache the navigated page
               });
           }
           return response;
         })
         .catch(() => {
-          // If network fails, try to serve from cache.
-          return caches.match(event.request)
-            .then(response => response || caches.match('/index.html')); // Fallback to home page
+          // If network fails, try to serve index.html from cache as a fallback for navigation.
+          return caches.match('./index.html') 
+            .then(response => response || caches.match('./')); // Fallback to root if index.html isn't explicitly cached under that key
         })
     );
     return;
   }
 
-  // For other requests (JS, CSS, images), use a cache-first strategy.
+  // For other requests (JS, CSS, images, etc.), use a cache-first strategy.
   event.respondWith(
     caches.match(event.request)
-      .then(response => {
+      .then(cachedResponse => {
         // Cache hit - return response
-        if (response) {
-          return response;
+        if (cachedResponse) {
+          return cachedResponse;
         }
-        // Not in cache - fetch from network, then cache it
+        // Not in cache - fetch from network
         return fetch(event.request).then(
           networkResponse => {
-            if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic' && !networkResponse.type === 'cors') {
-              // Don't cache opaque responses or errors unless specifically handled
+            // Check if we received a valid response
+            if (!networkResponse || networkResponse.status !== 200 || 
+                (networkResponse.type !== 'basic' && networkResponse.type !== 'cors')) { // Do not cache opaque responses from CDNs unless careful
               return networkResponse;
             }
+            
+            // If fetching from esm.sh or other CDNs, their responses are typically 'cors' type.
+            // We want to cache these.
             const responseToCache = networkResponse.clone();
             caches.open(CACHE_NAME)
               .then(cache => {
@@ -90,12 +97,10 @@ self.addEventListener('fetch', event => {
               });
             return networkResponse;
           }
-        );
-      })
-      .catch(error => {
-        // Generic fallback, or you could have an offline.html page
-        console.error('Service Worker: Fetch error:', error);
-        // You might want to return a fallback for images/assets here
+        ).catch(error => {
+            console.error('Service Worker: Fetch error for non-navigation request:', event.request.url, error);
+            // Optionally return a placeholder for broken images or specific fallbacks
+        });
       })
   );
 });
